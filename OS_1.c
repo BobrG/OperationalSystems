@@ -14,7 +14,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <string.h>
-int get_args(char* args, char** dest){
+int get_args(char* args, char* first_arg, char** dest){
     int n, i, j, l;
 
 
@@ -26,33 +26,31 @@ int get_args(char* args, char** dest){
         }
     }
 
-    n = 1;
-    for (j = l; j < strlen(args) - 1; ++j){
-        if (args[j] == ' '){
-            n++;
-        }
+    n = 0;
+    strcat(first_arg, "/bin/");
+    strcat(first_arg, args + l);
+    for (i = 0; first_arg[i] != '\0'; ++i){
+        if (first_arg[i] == ' ')
+            first_arg[i] = '\0';
     }
-    
-    
-    dest[0] = args + l;
 
-    for (l; args[l] != '\0'; l++){
+    for (l; args[l] != '\0'; ++l){
         if (args[l] == ' ' && args[l + 1] != ' '){
             dest[n] = args + l + 1;
-        }
-        for (i = 0; dest[n][i] != '\0'; i++){
-            if (dest[n][i] == ' '){
-                dest[j][i] = '\0';
-                break;
+            for (i = 0; dest[n][i] != '\0'; ++i){
+                if (dest[n][i] == ' ')
+                    dest[n][i] = '\0';
             }
+            
+            n++;
+            
         }
     
     }
+    n++;
+    dest[n] = NULL; 
 
-    dest[n++] = NULL;
-    
-    printf("%s\n", dest[0]);
- //   return n;
+    return n;
     
 }
 
@@ -64,6 +62,7 @@ int main(int argc, char *argv[]){
     int pipe_ret;
     char buff_p[100], buff_c[100];
     char** args;
+    char* first_arg;
 
     pipe_ret = pipe(mypipe);
 
@@ -80,19 +79,28 @@ int main(int argc, char *argv[]){
     else if (pid == 0){
         //Child;
         close(mypipe[1]);
-        read(mypipe[0], buff_c, sizeof(buff_c)/sizeof(char));
+        read(mypipe[0], buff_c, 100);
+        close(mypipe[0]);
         args = malloc((100)*sizeof(char*));
-        get_args(buff_c, args); 
-        execv(args[0], args);
+        first_arg =  malloc(100*sizeof(char));
+        printf("%s\n", buff_c);
+        count = get_args(buff_c, first_arg, args);
+        for (i = 0; i < count; ++i){
+            printf("Args[0]:%s\n",  args[i]);
+         } 
+        // args = realloc(args,(count)*sizeof(char*));
+        //execv(first_arg, (char*[]){"ls", "-l", NULL});
+        execv(first_arg, args);
     }
     else{
         //Parent;
         printf("Input command with arguments:\n");
         close(mypipe[0]);
-        scanf("%s", buff_p);
-        write(mypipe[1], buff_p, sizeof(buff_p)/sizeof(char));
-        get_args(buff_p, args);
+        fgets(buff_p, 100, stdin);
+        write(mypipe[1], buff_p, strlen(buff_p));
+        close(mypipe[1]);
         wait(0);
+
     }
 
     return 0;
