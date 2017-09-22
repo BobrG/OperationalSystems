@@ -10,10 +10,15 @@
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
+#include <setjmp.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <string.h>
+
+sigjmp_buf obl;
+int count = 0;
+
 int get_args(char* args, char* first_arg, char** dest){
     int n, i, j, l;
 
@@ -27,6 +32,8 @@ int get_args(char* args, char* first_arg, char** dest){
     }
 
     n = 0;
+    dest[n] = args + l;
+    n++;
     strcat(first_arg, "/bin/");
     strcat(first_arg, args + l);
     for (i = 0; first_arg[i] != '\0'; ++i){
@@ -37,21 +44,34 @@ int get_args(char* args, char* first_arg, char** dest){
     for (l; args[l] != '\0'; ++l){
         if (args[l] == ' ' && args[l + 1] != ' '){
             dest[n] = args + l + 1;
-            for (i = 0; dest[n][i] != '\0'; ++i){
-                if (dest[n][i] == ' ')
-                    dest[n][i] = '\0';
-            }
-            
             n++;
             
         }
     
     }
-    n++;
-    dest[n] = NULL; 
 
+    for (j = 0; j < n; ++j){
+        for (i = 0; dest[j][i] != '\0'; ++i){
+            if (dest[j][i] == ' ' || dest[j][i] == '\n')
+                dest[j][i] = '\0';
+        }
+    }
+
+    
+    dest[n] = NULL; 
+    n++;
     return n;
     
+}
+
+void handle(){
+    count ++;
+    signal (SIGINT, handle);
+    if (count >= 3){
+        printf("show file info");
+        exit(count);
+    }
+    siglongjmp (obl, 1);    /* возвращение на последний setjmp */
 }
 
 int main(int argc, char *argv[]){
@@ -64,8 +84,12 @@ int main(int argc, char *argv[]){
     char** args;
     char* first_arg;
 
+
     pipe_ret = pipe(mypipe);
 
+    signal(SIGINT, handle);
+
+    sigsetjmp(obl, 1);
     if (pipe_ret == -1){
         perror("Creating a pipe ERROR");
         exit(1);
@@ -83,13 +107,12 @@ int main(int argc, char *argv[]){
         close(mypipe[0]);
         args = malloc((100)*sizeof(char*));
         first_arg =  malloc(100*sizeof(char));
-        printf("%s\n", buff_c);
         count = get_args(buff_c, first_arg, args);
         for (i = 0; i < count; ++i){
             printf("Args[0]:%s\n",  args[i]);
+            
          } 
         // args = realloc(args,(count)*sizeof(char*));
-        //execv(first_arg, (char*[]){"ls", "-l", NULL});
         execv(first_arg, args);
     }
     else{
@@ -97,6 +120,7 @@ int main(int argc, char *argv[]){
         printf("Input command with arguments:\n");
         close(mypipe[0]);
         fgets(buff_p, 100, stdin);
+        sigsetjmp(obl, 1);
         write(mypipe[1], buff_p, strlen(buff_p));
         close(mypipe[1]);
         wait(0);
