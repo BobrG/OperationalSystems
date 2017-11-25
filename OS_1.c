@@ -19,35 +19,42 @@
 
 sigjmp_buf obl;
 volatile sig_atomic_t count = 0;
-static char* args[100] = {NULL};
-
+char* tmp[100] = {NULL};  
+int n;
 // functon get_args 
 // parsing a string on words with spaces as separators.
-void get_args(char* args, char* first_arg, char** dest){
+int get_args(char* lol, /*char* first_arg,*/ char** dest){
     int n, i, j, l;
-
+    char* args;
     l = 0;
     // start from first word;
+    args = malloc(100*sizeof(char));
+    strcpy(args, lol);
     for (j = 0; j < strlen(args) - 1; ++j){
         if (args[j] != ' '){
             l = j;
             break;
         }
     }
-
+    
     n = 0;
+    //strcpy(dest[n], "/bin/");
+    //strcat(dest[n], (args + l));
+    dest[n] = malloc(100*sizeof(char));
     dest[n] = args + l;
     n++;
-    strcat(first_arg, "/bin/");
-    strcat(first_arg, args + l);
-    for (i = 0; first_arg[i] != '\0'; ++i){
-        if (first_arg[i] == ' ')
-            first_arg[i] = '\0';
-    }
+    // strcat(first_arg, "/bin/");
+    // strcat(first_arg, args + l);
+    // for (i = 0; first_arg[i] != '\0'; ++i){
+    //     if (first_arg[i] == ' ')
+    //         first_arg[i] = '\0';
+    // }
 
     for (l; args[l] != '\0'; ++l){
         if (args[l] == ' ' && args[l + 1] != ' '){
-            dest[n] = args + l + 1;
+            dest[n] = malloc(100*sizeof(char));
+            strcpy(dest[n], args + l + 1);
+            
             n++;
             
         }
@@ -61,40 +68,46 @@ void get_args(char* args, char* first_arg, char** dest){
         }
     }
 
+    dest[n] = NULL; 
+    return n;
     
 }
 
-//not ready yet
+
 void handle(int sig){
-    int i;
+    int i; 
+    int len = 0;
     FILE* file;
     char line[256];
-    count ++;
+    count++;
     if (count >= 3){
-        for (i=1; args[i] != NULL; ++i){
-            if (args[i][0] != '-'){
-                printf("\nFile %d:\n %s\n", i+1, args[i]);
-                file = fopen(args[i], "r");
+        printf("I've got three interruption!\n%s", tmp[0]);
+        for (i=1; tmp[i] != NULL; ++i){
+            if (tmp[i][0] != '-'){
+                printf("\nFile %d:\n %s\n", i+1, tmp[i]);
+                file = fopen(tmp[i], "r");
                 while (fgets(line, sizeof(line), file)){
-                    printf("%s\n", line);
+                    len++;
                 }
                 fclose(file);
+                printf("%d\n", len);
+                len = 0;
             }
         }
         exit(count);
     }
-    siglongjmp (obl, 1);    /* returns to last setjmp */
 }
 
 int main(int argc, char *argv[]){
    
     pid_t pid;
     struct sigaction new_act, old_act;
+    int n;
     int i, j, amount;
     int mypipe[2];
     int pipe_ret;
-    char buff_p[100], buff_c[100];
-    char* first_arg;
+    char buff_p[100];
+    char* buff_c[100] = {NULL};
 
     pipe_ret = pipe(mypipe);
 
@@ -120,35 +133,53 @@ int main(int argc, char *argv[]){
     }
     else if (pid == 0){
         //Child;
-        if (sigaction(SIGINT, &new_act, NULL) < 0) {
-            perror ("Sigaction ERROR\n");
-            exit(3);
-        }
+        sleep(2);
         close(mypipe[1]);
-        read(mypipe[0], buff_c, 100);
-        close(mypipe[0]);
-        first_arg =  malloc(100*sizeof(char));
+        read(mypipe[0], &n, sizeof(n));
         
-        get_args(buff_c, first_arg, args);
-        //printf("%f\n", sizeof(args));
-        sigsetjmp(obl,1);
-        sleep(3);
-        execv(first_arg, args);
+        for (i = 0; i < n; ++i){
+            buff_c[i] = malloc(100*sizeof(char));
+        }
+        
+        for (i = 0; i < n; ++i){
+            read(mypipe[0], buff_c[i], 100);
+        }
+        
+        
+        close(mypipe[0]);
+        
+        execv(buff_c[0], buff_c);
     }
     else{
         //Parent;
-        sigsetjmp(obl,1);	
+
         printf("Input command with arguments:\n");
-        close(mypipe[0]);
         fgets(buff_p, 100, stdin);
-        sigsetjmp(obl,1);
-        write(mypipe[1], buff_p, strlen(buff_p));
+        n = get_args(buff_p, tmp);
+        
+        strcpy(buff_p, "/bin/");
+        strcat(buff_p, tmp[0]);
+        strcpy(tmp[0], buff_p);
+        
+        printf("number of keys and files: %d\n", n);
+        puts(buff_p);
+        puts(tmp[0]);
+
+        close(mypipe[0]);
+        
+        write(mypipe[1], &n, sizeof(n));
+        
+        for (i = 0; i < n; ++i){
+            write(mypipe[1], tmp[i], 100);
+        }
+        
         close(mypipe[1]);
         wait(0);
-
-    }
-    //sigsetjmp(obl,1);
-    //printf("lol");
+        
+        for (;;){
+            pause();
+        }
+     }
     
     return 0;
     
